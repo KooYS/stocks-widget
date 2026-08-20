@@ -61,7 +61,7 @@ export const className = `
   /* ponytail: backdrop-filter 안 쓴다. 갱신마다 backdrop이 재샘플링되며 한순간
      평균색(=불투명)으로 떠서 깜빡였다. 레이어 승격·분리 둘 다 안 먹혔다.
      투명 창이라 알파만으로도 벽지가 비친다 — 간유리 대신 반투명 패널로 간다 */
-  background: rgba(40, 44, 52, 0.5);
+  background: rgba(40, 44, 52, 0.6);
   box-shadow: 0 8px 32px rgba(0,0,0,0.28);
   color: #fff;
   font-family: -apple-system, "SF Pro Text", sans-serif;
