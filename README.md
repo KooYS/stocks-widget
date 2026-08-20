@@ -134,6 +134,70 @@ ln -s ~/stocks-widget/stocks.jsx "$HOME/Library/Application Support/Übersicht/w
 
 ---
 
+## 개발
+
+```sh
+git clone https://github.com/KooYS/stocks-widget.git ~/stocks-widget
+cd ~/stocks-widget
+```
+
+clone 위치는 어디든 상관없다. 코드 안에 저장소 경로가 박힌 곳이 없다 —
+`stocks.jsx` 는 `~/.config/stocks.py` 만 부르고 그게 심링크이기 때문이다.
+빌드도 없고 `node_modules` 도 없다. clone → 심링크 → 끝.
+
+이미 위젯을 쓰고 있었다면 기존 파일을 치우고 링크로 바꾼다:
+
+```sh
+W="$HOME/Library/Application Support/Übersicht/widgets"
+mv ~/.config/stocks.py ~/.config/stocks.py.bak
+mv "$W/stocks.jsx" "$W/stocks.jsx.bak"
+ln -s ~/stocks-widget/stocks.py  ~/.config/stocks.py
+ln -s ~/stocks-widget/stocks.jsx "$W/stocks.jsx"
+```
+
+`~/.config/stocks.json`(종목 목록)은 건드리지 않는다. 저장소에 없으니 그대로 살아남는다.
+
+### 고치고 → 확인하는 사이클
+
+| 고친 파일 | 반영 방식 |
+|---|---|
+| `stocks.py` | 다음 갱신(최대 10초)에 자동 반영. 셸에서 먼저 돌려보는 게 빠르다 |
+| `stocks.jsx` | 저장하면 Übersicht가 다시 읽는다. 심링크라 감지가 안 되면 메뉴바 → **Refresh All Widgets** |
+
+```sh
+./stocks.py | python3 -m json.tool   # 위젯이 받는 것과 똑같은 JSON
+./stocks.py del A005930              # 삭제
+./stocks.py add                      # 검색 다이얼로그 (GUI 필요)
+```
+
+위젯이 `시세 없음` 만 띄우면 십중팔구 `stocks.py` 출력이 JSON이 아닌 경우다. 위 명령으로 바로 보인다.
+
+### 로그 보기
+
+메뉴바 Übersicht → **Show Debug Console**. WebInspector가 열리고 `console.log` 와 JSX 에러가 여기 찍힌다.
+
+### stocks.jsx 구조
+
+Übersicht가 JSX를 자체 트랜스파일한다. 특별한 건 `import { run } from "uebersicht"` (셸 명령 실행) 하나뿐이고 나머지는 평범한 React다.
+내보내야 하는 것:
+
+| export | 역할 |
+|---|---|
+| `command` | 10초마다 실행할 셸 명령. 여기선 `stocks.py` |
+| `refreshFrequency` | 실행 주기(ms) |
+| `parse` | `command` 의 stdout(문자열)을 그리기 좋은 형태로 변환 |
+| `render` | `{ output, error }` 를 받아 JSX 반환 |
+| `className` | 위젯 CSS. 최상위 선택자 없이 바로 속성을 쓴다 |
+
+### 제거
+
+```sh
+rm ~/.config/stocks.py "$HOME/Library/Application Support/Übersicht/widgets/stocks.jsx"
+rm ~/.config/stocks.json   # 종목 목록까지 지울 때만
+```
+
+---
+
 ## API
 
 셋 다 공개 스펙이 아니다. 예고 없이 깨질 수 있고, 깨지면 위젯은 `시세 없음` 만 띄운다.
