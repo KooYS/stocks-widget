@@ -5,7 +5,8 @@
 import json, os, subprocess, urllib.parse, urllib.request
 from sys import argv
 
-STORE = os.path.expanduser("~/.config/stocks.json")  # 종목 목록. 없으면 아래 기본값
+# 종목 목록은 스크립트 옆에 둔다 (심링크로 불려도 실제 저장소 위치로 풀린다). 없으면 아래 기본값
+STORE = os.path.join(os.path.dirname(os.path.realpath(__file__)), "stocks.json")
 
 # 토스 productCode. 국내주식 A+종목코드, 지수/해외주식은 페이지 URL에서 복사:
 # https://www.tossinvest.com/stocks/<코드>/order , /indices/<코드>

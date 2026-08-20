@@ -1,9 +1,11 @@
 // Übersicht widget — 토스증권 시세 + 환율 (데이/프리마켓 반영)
-// ~/Library/Application Support/Übersicht/widgets/stocks.jsx
-// 종목 목록 / 추가 / 삭제는 ~/.config/stocks.py 가 담당 (목록은 ~/.config/stocks.json)
+// 저장소에 두고 Übersicht widgets 디렉토리에 심링크로 건다
+// 종목 목록 / 추가 / 삭제는 옆의 stocks.py 가 담당 (목록은 stocks.json)
 import { run } from "uebersicht";
 
-const HELPER = "/usr/bin/python3 ~/.config/stocks.py";
+// ponytail: Übersicht는 widgets 디렉토리를 cwd로 명령을 돌린다. 저장소 경로 하드코딩 대신
+// widgets/stocks.py 심링크를 상대경로로 부른다 (shebang이 /usr/bin/python3 고정)
+const HELPER = "./stocks.py";
 // 지수는 통화기호를 안 붙인다. 코스피/코스닥이 currency:KRW로 와서 코드로 구분해야 한다
 const INDEX = new Set(["KGG01P", "QGG01P"]);
 const UNIT = { KRW: "₩", USD: "$" };

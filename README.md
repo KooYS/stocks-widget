@@ -24,20 +24,25 @@ macOS 데스크탑에 띄우는 주식 시세 위젯. 토스증권 시세 + 네�
 따라서 Übersicht를 먼저 깔아야 하고, 이 저장소 파일을 Übersicht가 보는 폴더에 연결해줘야 한다.
 
 ```
-┌─────────────────────────────────────────────┐
-│ Übersicht.app  (외부 앱, 별도 설치)           │
-│   └ ~/Library/Application Support/          │
-│        Übersicht/widgets/stocks.jsx ─────────┼──▶ 심링크 ──▶ 이 저장소/stocks.jsx
-│           │                                  │
-│           │ 10초마다 shell 실행               │
-│           ▼                                  │
-│        /usr/bin/python3 ~/.config/stocks.py ─┼──▶ 심링크 ──▶ 이 저장소/stocks.py
+┌──────────────────────────────────────────────┐
+│ Übersicht.app  (외부 앱, 별도 설치)            │
+│   └ ~/Library/Application Support/           │
+│        Übersicht/widgets/    ← 이 폴더가 cwd  │
+│           ├ stocks.jsx  ─────────────────────┼──▶ 심링크 ──▶ 이 저장소/stocks.jsx
+│           │    │                             │
+│           │    │ 10초마다 `./stocks.py` 실행  │
+│           │    ▼                             │
+│           └ stocks.py   ─────────────────────┼──▶ 심링크 ──▶ 이 저장소/stocks.py
 │                    │                         │
 └────────────────────┼─────────────────────────┘
-                     │  ├─ 토스증권 API (시세·검색)
-                     │  ├─ 네이버 API (환율)
-                     │  └─ ~/.config/stocks.json (내 종목 목록, 저장소 밖)
+                     ├─ 토스증권 API (시세·검색)
+                     ├─ 네이버 API (환율)
+                     └─ 이 저장소/stocks.json (내 종목 목록, gitignore)
 ```
+
+경로는 전부 상대경로다. Übersicht는 widgets 폴더를 cwd로 셸을 띄우므로(`CommandServer(widgetPath)`)
+위젯은 `./stocks.py` 만 부르면 되고, `stocks.py` 는 `realpath(__file__)` 옆의 `stocks.json` 을 읽는다.
+심링크를 타고 결국 **저장소 안에서** 코드도 데이터도 해결된다. clone 위치를 어디로 잡든 상관없는 이유다.
 
 ### 요구사항
 
@@ -59,13 +64,17 @@ python.org 빌드나 pyenv/conda python은 쓰지 않는다. 인증서가 없어
 brew install --cask ubersicht
 open -a Übersicht
 
-# 2. 저장소 clone
-git clone https://github.com/KooYS/stocks-widget.git ~/stocks-widget
+# 2. 저장소 clone (위치는 자유)
+git clone https://github.com/KooYS/stocks-widget.git ~/Desktop/dev/stocks-widget
 
-# 3. Übersicht 위젯 폴더와 ~/.config 에 심링크
-ln -s ~/stocks-widget/stocks.py  ~/.config/stocks.py
-ln -s ~/stocks-widget/stocks.jsx "$HOME/Library/Application Support/Übersicht/widgets/stocks.jsx"
+# 3. Übersicht 위젯 폴더에 두 파일 다 심링크
+W="$HOME/Library/Application Support/Übersicht/widgets"
+R="$HOME/Desktop/dev/stocks-widget"
+ln -s "$R/stocks.jsx" "$W/stocks.jsx"
+ln -s "$R/stocks.py"  "$W/stocks.py"
 ```
+
+`stocks.py` 도 같이 걸어야 한다. 위젯이 `./stocks.py` 로 부르기 때문이다.
 
 심링크로 거는 이유: Übersicht는 **정해진 폴더만** 읽고 위젯 경로를 바꿀 수 없다.
 원본을 저장소에 두고 링크만 걸어두면 `git pull` 한 번으로 갱신된다.
@@ -76,7 +85,7 @@ ln -s ~/stocks-widget/stocks.jsx "$HOME/Library/Application Support/Übersicht/w
 동작 확인:
 
 ```sh
-~/.config/stocks.py | python3 -m json.tool
+./stocks.py | python3 -m json.tool
 # tickers / prices / fx 세 키가 나오면 정상
 ```
 
@@ -92,7 +101,7 @@ ln -s ~/stocks-widget/stocks.jsx "$HOME/Library/Application Support/Übersicht/w
 | 위치 이동 | 카드를 드래그. 버튼 위에서 끌면 드래그 안 걸린다 |
 | 위치 초기화 | Übersicht 개발자도구 콘솔에서 `localStorage.removeItem("stocks-widget-pos")` |
 
-추가/삭제는 `~/.config/stocks.json` 에 바로 반영되고 위젯은 다음 갱신(최대 10초)에 따라온다.
+추가/삭제는 저장소의 `stocks.json` 에 바로 반영되고 위젯은 다음 갱신(최대 10초)에 따라온다.
 파일을 직접 편집해도 된다 — 순서를 바꾸고 싶을 때가 그렇다. 위젯은 **파일에 적힌 순서 그대로** 그린다.
 
 ```json
@@ -137,25 +146,31 @@ ln -s ~/stocks-widget/stocks.jsx "$HOME/Library/Application Support/Übersicht/w
 ## 개발
 
 ```sh
-git clone https://github.com/KooYS/stocks-widget.git ~/stocks-widget
-cd ~/stocks-widget
+git clone https://github.com/KooYS/stocks-widget.git ~/Desktop/dev/stocks-widget
+cd ~/Desktop/dev/stocks-widget
 ```
 
-clone 위치는 어디든 상관없다. 코드 안에 저장소 경로가 박힌 곳이 없다 —
-`stocks.jsx` 는 `~/.config/stocks.py` 만 부르고 그게 심링크이기 때문이다.
-빌드도 없고 `node_modules` 도 없다. clone → 심링크 → 끝.
+clone 위치는 어디든 상관없다. 코드 안에 절대경로가 박힌 곳이 없다 —
+`stocks.jsx` 는 `./stocks.py`(widgets 폴더 기준), `stocks.py` 는 자기 옆의 `stocks.json` 을 본다.
+빌드도 없고 `node_modules` 도 없다. clone → 심링크 두 개 → 끝.
 
 이미 위젯을 쓰고 있었다면 기존 파일을 치우고 링크로 바꾼다:
 
 ```sh
 W="$HOME/Library/Application Support/Übersicht/widgets"
-mv ~/.config/stocks.py ~/.config/stocks.py.bak
-mv "$W/stocks.jsx" "$W/stocks.jsx.bak"
-ln -s ~/stocks-widget/stocks.py  ~/.config/stocks.py
-ln -s ~/stocks-widget/stocks.jsx "$W/stocks.jsx"
+R="$HOME/Desktop/dev/stocks-widget"
+mv "$W/stocks.jsx" "$W/stocks.jsx.bak" 2>/dev/null
+mv ~/.config/stocks.json "$R/stocks.json" 2>/dev/null   # 예전 위치에서 종목 목록 옮기기
+ln -s "$R/stocks.jsx" "$W/stocks.jsx"
+ln -s "$R/stocks.py"  "$W/stocks.py"
 ```
 
-`~/.config/stocks.json`(종목 목록)은 건드리지 않는다. 저장소에 없으니 그대로 살아남는다.
+`stocks.json` 은 `.gitignore` 에 들어 있다. 종목을 추가/삭제할 때마다 바뀌는 개인 데이터라
+저장소에는 안 올라가고, `git pull` 이나 저장소 교체에도 그대로 남는다.
+없으면 `stocks.py` 의 `DEFAULT` 로 처음 한 번 만들어진다.
+
+> 실행 중인 Übersicht에서 심링크를 **갈아끼우면** 위젯이 목록에서 빠진 채로 안 돌아온다.
+> (파일 감시가 심링크 생성 이벤트를 디렉토리로 오인한다.) 링크를 바꿨으면 Übersicht를 껐다 켠다.
 
 ### 고치고 → 확인하는 사이클
 
@@ -163,6 +178,7 @@ ln -s ~/stocks-widget/stocks.jsx "$W/stocks.jsx"
 |---|---|
 | `stocks.py` | 다음 갱신(최대 10초)에 자동 반영. 셸에서 먼저 돌려보는 게 빠르다 |
 | `stocks.jsx` | 저장하면 Übersicht가 다시 읽는다. 심링크라 감지가 안 되면 메뉴바 → **Refresh All Widgets** |
+| 심링크 자체 | 앱 재시작. Refresh로는 다시 안 잡힌다 |
 
 ```sh
 ./stocks.py | python3 -m json.tool   # 위젯이 받는 것과 똑같은 JSON
@@ -183,7 +199,7 @@ ln -s ~/stocks-widget/stocks.jsx "$W/stocks.jsx"
 
 | export | 역할 |
 |---|---|
-| `command` | 10초마다 실행할 셸 명령. 여기선 `stocks.py` |
+| `command` | 10초마다 실행할 셸 명령. 여기선 `./stocks.py` — cwd는 widgets 폴더다 |
 | `refreshFrequency` | 실행 주기(ms) |
 | `parse` | `command` 의 stdout(문자열)을 그리기 좋은 형태로 변환 |
 | `render` | `{ output, error }` 를 받아 JSX 반환 |
@@ -192,9 +208,11 @@ ln -s ~/stocks-widget/stocks.jsx "$W/stocks.jsx"
 ### 제거
 
 ```sh
-rm ~/.config/stocks.py "$HOME/Library/Application Support/Übersicht/widgets/stocks.jsx"
-rm ~/.config/stocks.json   # 종목 목록까지 지울 때만
+W="$HOME/Library/Application Support/Übersicht/widgets"
+rm "$W/stocks.jsx" "$W/stocks.py"
 ```
+
+저장소를 통째로 지우면 `stocks.json`(종목 목록)도 같이 사라진다.
 
 ---
 
@@ -217,7 +235,9 @@ rm ~/.config/stocks.json   # 종목 목록까지 지울 때만
 | 증상 | 원인 |
 |---|---|
 | 위젯이 아예 안 보임 | Übersicht 미실행, 또는 심링크 경로 오타. Widgets… 목록 확인 |
-| `시세 없음` | `~/.config/stocks.py` 실행 결과가 JSON이 아님. 터미널에서 직접 돌려본다 |
+| `시세 없음` | `stocks.py` 실행 결과가 JSON이 아님. 저장소에서 직접 돌려본다 |
+| 심링크를 바꾼 뒤 위젯이 사라짐 | 감시가 다시 안 잡는다. Übersicht 재시작 |
+| `./stocks.py: Permission denied` | 실행 권한이 빠졌다. `chmod +x stocks.py` |
 | SSL 오류 | `/usr/bin/python3` 가 아닌 python이 잡혔다. `stocks.jsx` 의 `HELPER` 확인 |
 | 특정 종목만 안 뜸 | productCode 오타. 토스가 없는 코드를 에러 없이 빼고 준다 |
 | 환율만 안 뜸 | 네이버 응답 변경. `stocks.py` 의 `fx()` 확인 |
