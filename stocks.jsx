@@ -181,13 +181,11 @@ const uniqBy = (arr, keyOf) => {
   return out;
 };
 
-// 기본은 종목당 최신 1건, 종목을 고르면 그 종목만, 전체보기면 다.
-// ponytail: 같은 기사가 여러 종목에 걸린다(나열 기사). 전체보기에선 url 로 한 번만 보인다
-const shown = (news, pick) => {
-  if (pick === "*") return uniqBy(news, (n) => n.url);
-  if (pick) return news.filter((n) => n.name === pick);
-  return uniqBy(news, (n) => n.name);
-};
+// 기본은 전체 뉴스, 종목을 고르면 그 종목만. ponytail: 상태를 둘로 유지한다 —
+// "종목당 1건" 뷰를 따로 두니 ‹ 로 돌아왔을 때 어디로 가는지가 헷갈렸다
+// 같은 기사가 여러 종목에 걸리므로(나열 기사) 전체에선 url 로 한 번만 보인다
+const shown = (news, pick) =>
+  pick ? news.filter((n) => n.name === pick) : uniqBy(news, (n) => n.url);
 
 const Row = ({ r, onDelete, onPick, on }) => (
   <div className={"row" + (onPick ? " pick" : "") + (on ? " on" : "")}
@@ -250,17 +248,13 @@ export const render = ({ output, error, pick }, dispatch) => {
           <div className="pane">
             <div className="head">
               {pick ? (
-                <button className="link" onClick={go(null)} title="돌아가기">
-                  ‹ {pick === "*" ? "전체" : pick}
+                <button className="link" onClick={go(null)} title="전체 뉴스로">
+                  ‹ {pick}
                 </button>
               ) : (
                 <span>뉴스</span>
               )}
-              {!pick && news.length > 0 && (
-                <button className="link" onClick={go("*")} title="전체 보기">
-                  전체 {uniqBy(news, (n) => n.url).length}건
-                </button>
-              )}
+              <span>{rows.length}건</span>
             </div>
             <div className="list">
               {rows.length === 0 && <div className="empty">뉴스를 받는 중…</div>}
