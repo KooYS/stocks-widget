@@ -109,9 +109,10 @@ export const className = `
 
   .list { flex: 1; min-height: 0; overflow-y: auto;
           overscroll-behavior: contain; cursor: default; }
-  .list::-webkit-scrollbar { width: 5px; }
+  .list::-webkit-scrollbar { width: 8px; }
   .list::-webkit-scrollbar-track { background: transparent; }
-  .list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.22); border-radius: 3px; }
+  .list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 4px; }
+  .list::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.5); }
   .item { padding: 6px 0; }
   .meta { font-size: 10px; opacity: 0.5; letter-spacing: 0.3px; }
   .title { opacity: 0.85; line-height: 1.35; margin-top: 2px; cursor: pointer; }
@@ -166,19 +167,26 @@ const ago = (ts) => {
   return `${d.getMonth() + 1}/${d.getDate()} · ${Math.round(min / 1440)}일 전`;
 };
 
-// 기본은 종목당 최신 1건, 종목을 고르면 그 종목만, 전체보기면 다.
-const shown = (news, pick) => {
-  if (pick === "*") return news;
-  if (pick) return news.filter((n) => n.name === pick);
-  const seen = new Set(); // news 가 이미 최신순이라 첫 등장만 남기면 종목당 최신 1건이다
+// news 는 최신순으로 온다. 첫 등장만 남기면 그 키의 최신 1건이 된다
+const uniqBy = (arr, keyOf) => {
+  const seen = new Set();
   const out = [];
-  for (const n of news) {
-    if (!seen.has(n.name)) {
-      seen.add(n.name);
-      out.push(n);
+  for (const x of arr) {
+    const k = keyOf(x);
+    if (!seen.has(k)) {
+      seen.add(k);
+      out.push(x);
     }
   }
   return out;
+};
+
+// 기본은 종목당 최신 1건, 종목을 고르면 그 종목만, 전체보기면 다.
+// ponytail: 같은 기사가 여러 종목에 걸린다(나열 기사). 전체보기에선 url 로 한 번만 보인다
+const shown = (news, pick) => {
+  if (pick === "*") return uniqBy(news, (n) => n.url);
+  if (pick) return news.filter((n) => n.name === pick);
+  return uniqBy(news, (n) => n.name);
 };
 
 const Row = ({ r, onDelete, onPick, on }) => (
@@ -250,14 +258,14 @@ export const render = ({ output, error, pick }, dispatch) => {
               )}
               {!pick && news.length > 0 && (
                 <button className="link" onClick={go("*")} title="전체 보기">
-                  전체 {news.length}건
+                  전체 {uniqBy(news, (n) => n.url).length}건
                 </button>
               )}
             </div>
             <div className="list">
               {rows.length === 0 && <div className="empty">뉴스를 받는 중…</div>}
               {rows.map((n, i) => (
-                <div key={n.url}>
+                <div key={n.name + "|" + n.url}>
                   {i > 0 && <div className="thin" />}
                   <div className="item">
                     <div className="meta">{n.name} · {ago(n.ts)}</div>
