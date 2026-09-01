@@ -7,10 +7,12 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from sys import argv
 
-STORE = os.path.join(os.path.dirname(os.path.realpath(__file__)), "stocks.json")
+HERE = os.path.dirname(os.path.realpath(__file__))
+STORE = os.path.join(HERE, "stocks.json")
+KINDS = os.path.join(HERE, "news-kinds.json")  # code -> 토스 companyCode 캐시
 INDEX = {"KGG01P", "QGG01P"}  # stocks.jsx 의 INDEX 와 같은 규칙 (.NAI 는 접미사로 판별)
-PER_STOCK = 1                 # 종목당 1건. 2로 올리면 대형주가 목록을 다 먹는다
-LIMIT = 8
+PER_STOCK = 6                 # 종목당 수집량. 위젯이 화면에서 걸러 쓴다
+LIMIT = 60                    # 페이로드 상한 (7종목 × 6 = 42)
 
 # ponytail: 제목 부분일치 블록리스트. 시세봇("...주가, 9월 1일 장중 43,500원 5.64% 하락")과
 # 나열기사가 최신순 1등으로 올라온다. 부족하면 source(톱스타뉴스 등) 기준을 얹는다
@@ -23,6 +25,49 @@ def load():
             return json.load(f)
     except OSError:
         return {}  # stocks.py 가 아직 안 돌았다. 다음 갱신에 채워진다
+
+
+def company_code(code):
+    """토스 검색으로 companyCode 를 얻는다. ETF 는 EF 접두가 붙는다 (EFAMXSOXL, EFKSP069500)"""
+    url = ("https://wts-info-api.tossinvest.com/api/v3/search-all/wts-auto-complete?query="
+           + urllib.parse.quote(code))
+    body = json.dumps({"query": code,
+                       "sections": [{"type": "PRODUCT",
+                                     "option": {"addIntegratedSearchResult": True}}]}).encode()
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0", "Referer": "https://www.tossinvest.com/",
+        "Content-Type": "application/json"})
+    d = json.load(urllib.request.urlopen(req, body, timeout=10))["result"]
+    for sec in d:
+        if sec["type"] != "PRODUCT":
+            continue
+        for i in sec["data"]["items"]:
+            if i["productCode"] == code:
+                return i.get("companyCode") or ""
+    return ""  # 지수는 검색에 안 잡힌다. 어차피 코드 패턴으로 먼저 걸러진다
+
+
+def targets():
+    """뉴스를 검색할 종목만 고른다. 지수는 코드 패턴, ETF 는 companyCode 로 뺀다"""
+    tickers = load()
+    codes = [c for c in tickers if not (c.endswith(".NAI") or c in INDEX)]
+    # ponytail: 종목 타입은 안 바뀐다. 한 번 조회하고 파일에 캐시 — 10분마다 다시 물을 이유가 없다
+    try:
+        with open(KINDS) as f:
+            cache = json.load(f)
+    except OSError:
+        cache = {}
+    miss = [c for c in codes if c not in cache]
+    for c in miss:
+        try:
+            cache[c] = company_code(c)
+        except Exception:
+            cache[c] = ""  # 조회 실패는 종목으로 취급. 뉴스를 아예 안 띄우는 것보단 낫다
+        time.sleep(0.3)
+    if miss:
+        with open(KINDS, "w") as f:
+            json.dump(cache, f, ensure_ascii=False, indent=1)
+    return [(c, tickers[c]) for c in codes if not cache.get(c, "").startswith("EF")]
 
 
 def fetch(name):
@@ -50,9 +95,7 @@ def rows(name, xml, cap=PER_STOCK):
 
 def collect():
     news = []
-    for code, name in load().items():
-        if code.endswith(".NAI") or code in INDEX:
-            continue  # 지수는 종목 뉴스 대신 시황이 잡히고 오매칭이 심하다
+    for code, name in targets():
         try:
             news += rows(name, fetch(name))
         except Exception:  # ponytail: 한 종목이 실패해도 나머지는 띄운다

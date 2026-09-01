@@ -20,7 +20,7 @@ const loadPos = () => {
 };
 
 const startDrag = (e) => {
-  if (e.target.closest(".item")) return; // 기사 클릭은 드래그 아님
+  if (e.target.closest(".list")) return; // 목록 안에서는 스크롤·클릭이 우선
   e.preventDefault();
   const el = e.currentTarget;
   const dx = e.clientX - el.offsetLeft;
@@ -40,6 +40,17 @@ const startDrag = (e) => {
 
 const openArticle = (url) => () => run(`open "${url}"`);
 
+// ponytail: 위젯 render는 컴포넌트가 아니라서 훅을 못 쓴다.
+// Übersicht가 주는 updateState/dispatch 가 상태 보관 방식이다
+export const initialState = { output: "", error: null, pick: null };
+
+export const updateState = (event, prev) => {
+  if (event.type === "PICK") return { ...prev, pick: event.name };
+  if (event.type === "UB/COMMAND_RAN")
+    return { ...prev, output: event.output, error: event.error };
+  return prev;
+};
+
 export const className = `
   top: 0; left: 0;
 
@@ -57,12 +68,23 @@ export const className = `
   .card:active { cursor: grabbing; }
 
   .head { display: flex; justify-content: space-between; align-items: baseline;
-          font-size: 11px; opacity: 0.6; margin-bottom: 12px; letter-spacing: 0.3px; }
-  .item { cursor: pointer; padding: 6px 0; }
-  .item:hover .title { opacity: 1; text-decoration: underline; }
-  .meta { font-size: 10px; opacity: 0.45; letter-spacing: 0.3px; }
-  .title { opacity: 0.85; line-height: 1.35; margin-top: 2px; }
+          font-size: 11px; opacity: 0.6; margin-bottom: 10px; letter-spacing: 0.3px; }
+
+  .list { max-height: 300px; overflow-y: auto; overscroll-behavior: contain; cursor: default; }
+  .list::-webkit-scrollbar { width: 5px; }
+  .list::-webkit-scrollbar-track { background: transparent; }
+  .list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.22); border-radius: 3px; }
+
+  .item { padding: 6px 0; }
+  .meta { font-size: 10px; opacity: 0.5; letter-spacing: 0.3px; }
+  .title { opacity: 0.85; line-height: 1.35; margin-top: 2px; cursor: pointer; }
+  .title:hover { opacity: 1; text-decoration: underline; }
   .rule { height: 1px; background: rgba(255,255,255,0.12); margin: 2px 0; }
+  .empty { opacity: 0.5; padding: 6px 0; }
+
+  button { background: none; border: 0; padding: 0; margin: 0;
+           color: inherit; font: inherit; cursor: pointer; opacity: 0.85; }
+  button:hover { opacity: 1; text-decoration: underline; }
 `;
 
 export const parse = (output) => JSON.parse(output).items;
@@ -72,8 +94,24 @@ const ago = (ts) => {
   return m < 60 ? `${Math.max(1, Math.round(m))}m` : `${Math.round(m / 60)}h`;
 };
 
-export const render = ({ output, error }) => {
+// 기본은 종목당 최신 1건, 종목을 고르면 그 종목만, 전체보기면 다.
+const shown = (items, pick) => {
+  if (pick === "*") return items;
+  if (pick) return items.filter((n) => n.name === pick);
+  const seen = new Set(); // items 가 이미 최신순이라 첫 등장만 남기면 종목당 최신 1건이다
+  const out = [];
+  for (const n of items) {
+    if (!seen.has(n.name)) {
+      seen.add(n.name);
+      out.push(n);
+    }
+  }
+  return out;
+};
+
+export const render = ({ output, error, pick }, dispatch) => {
   const pos = loadPos();
+  const go = (name) => () => dispatch({ type: "PICK", name });
   const card = (body) => (
     <div className="card" style={{ left: pos.x, top: pos.y }} onMouseDown={startDrag}>
       <div className="head">{body}</div>
@@ -87,22 +125,37 @@ export const render = ({ output, error }) => {
     return card("뉴스 없음");
   }
   const now = new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+  const rows = shown(items, pick);
   return (
     <div className="card" style={{ left: pos.x, top: pos.y }} onMouseDown={startDrag}>
       <div className="head">
-        <span>뉴스</span>
-        <span>{now}</span>
+        {pick ? (
+          <button onClick={go(null)} title="돌아가기">‹ {pick === "*" ? "전체" : pick}</button>
+        ) : (
+          <span>뉴스</span>
+        )}
+        <span>
+          {!pick && (
+            <button onClick={go("*")} title="전체 보기">전체 {items.length}건</button>
+          )}{" "}
+          {now}
+        </span>
       </div>
-      {items.length === 0 && <div className="title">최근 뉴스 없음</div>}
-      {items.map((n, i) => (
-        <div key={n.url}>
-          {i > 0 && <div className="rule" />}
-          <div className="item" onClick={openArticle(n.url)} title="기사 열기">
-            <div className="meta">{n.name} · {ago(n.ts)}</div>
-            <div className="title">{n.title}</div>
+      <div className="list">
+        {rows.length === 0 && <div className="empty">뉴스 없음</div>}
+        {rows.map((n, i) => (
+          <div key={n.url}>
+            {i > 0 && <div className="rule" />}
+            <div className="item">
+              <div className="meta">
+                <button onClick={go(n.name)} title={`${n.name} 뉴스만 보기`}>{n.name}</button>
+                {" · " + ago(n.ts)}
+              </div>
+              <div className="title" onClick={openArticle(n.url)} title="기사 열기">{n.title}</div>
+            </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 };

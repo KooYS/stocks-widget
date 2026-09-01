@@ -6,7 +6,7 @@ macOS 데스크탑에 띄우는 주식 시세 위젯. 토스증권 시세 + 네�
 - `＋ 종목` 으로 검색해서 추가, 줄에 마우스 올려 `×` 로 삭제
 - 카드를 드래그해 원하는 위치에 배치 (좌표 기억)
 - 10초마다 갱신, 프리마켓·데이마켓 반영
-- 보유 종목 뉴스를 **별도 카드**로 (10분 주기, 헤드라인 클릭하면 기사가 열린다)
+- 보유 종목 뉴스를 **별도 카드**로 — 종목을 눌러 그 종목만 보거나 전체 보기, 스크롤
 
 ![10초마다 시세가 갱신되고 카드를 드래그해 옮기는 모습](demo/live.gif)
 
@@ -108,6 +108,8 @@ for f in stocks.jsx stocks.py news.jsx news.py; do ln -s "$R/$f" "$W/$f"; done
 | 종목 삭제 | 해당 줄에 마우스를 올리면 이름 옆에 `×` |
 | 위치 이동 | 카드를 드래그. 버튼 위에서 끌면 드래그 안 걸린다 |
 | 기사 읽기 | 뉴스 카드에서 헤드라인 클릭 → 기본 브라우저로 열린다 |
+| 특정 종목 뉴스만 | 헤드라인 위 종목명 클릭. `‹` 로 복귀 |
+| 뉴스 전체 보기 | 뉴스 카드 헤더의 `전체 N건` 클릭 |
 | 위치 초기화 | Übersicht 개발자도구 콘솔에서 `localStorage.removeItem("stocks-widget-pos")` |
 | 뉴스 위치 초기화 | 같은 콘솔에서 `localStorage.removeItem("news-widget-pos")` |
 
@@ -144,8 +146,25 @@ for f in stocks.jsx stocks.py news.jsx news.py; do ln -s "$R/$f" "$W/$f"; done
 
 설계에 반영한 실측 세 가지다.
 
-**1. 지수는 뺀다.** `.NAI` 로 끝나거나 `KGG01P`/`QGG01P` 인 항목은 건너뛴다.
-지수를 검색하면 종목 뉴스가 아니라 시황이 잡히고("[마켓뷰] 중동 긴장에…"), 오매칭도 심하다.
+**1. 지수와 ETF는 뺀다.** 회사가 아니라서 종목명 검색이 의미가 없다.
+
+| | 판별 | 왜 |
+|---|---|---|
+| 지수 | 코드가 `.NAI` 로 끝나거나 `KGG01P`/`QGG01P` | 종목 뉴스 대신 시황이 잡힌다 ("[마켓뷰] 중동 긴장에…") |
+| ETF | 토스 `companyCode` 가 `EF` 로 시작 | `SOXL` 검색 결과가 "여경 코멘토 게시판" 이었다 |
+
+ETF는 코드 모양으로 구분이 안 된다 (`A360750` ETF vs `A005930` 주식). 토스 검색을
+productCode로 치면 `companyCode` 가 오는데 여기서 갈린다:
+
+```
+EFAMXSOXL     SOXL              ← ETF
+EFKSP069500   KODEX 200         ← ETF
+005930        삼성전자           ← 주식
+NAS116LTR-E0  샌디스크           ← 주식
+```
+
+종목 타입은 안 바뀌므로 한 번 조회해 `news-kinds.json` 에 캐시한다(gitignore).
+새 종목을 추가했을 때만 한 번 더 물어본다.
 
 **2. 종목을 묶어서 한 번에 못 친다.** `q` 에 `OR` 로 묶으면 요청은 1회로 끝나지만
 100건 캡을 대형주가 다 먹는다 — 실측에서 삼성전자 68건, 지엔씨에너지 **0건**이었다.
@@ -164,8 +183,21 @@ for f in stocks.jsx stocks.py news.jsx news.py; do ln -s "$R/$f" "$W/$f"; done
 블록리스트(`NOISE`)로 나머지를 거른다. 완벽하진 않다 — 티커명이 짧으면
 (`SOXL` 등) 여전히 엉뚱한 게 섞인다.
 
-종목당 최신 1건씩(`PER_STOCK`) 모아 최신순으로 최대 8건(`LIMIT`) 띄운다.
-`PER_STOCK` 을 2로 올리면 뉴스 많은 대형주가 목록을 차지해서 소형주가 안 보인다.
+### 보기 방식
+
+수집은 종목당 6건(`PER_STOCK`), 화면에서 걸러 보여준다.
+
+| 상태 | 내용 | 가는 법 |
+|---|---|---|
+| 기본 | 종목당 최신 1건씩 | — |
+| 종목 | 그 종목 뉴스 전부 | 헤드라인 위 **종목명** 클릭 |
+| 전체 | 모든 종목 전부, 최신순 | 헤더의 **전체 N건** 클릭 |
+
+`‹` 를 누르면 기본으로 돌아온다. 목록은 넘치면 스크롤된다(최대 높이 300px).
+목록 안에서는 드래그가 안 걸리니 카드를 옮길 땐 헤더나 여백을 잡는다.
+
+> 상태는 Übersicht의 `updateState`/`dispatch` 로 들고 있다. 위젯 `render` 는
+> 컴포넌트가 아니라서 React 훅을 못 쓴다.
 
 ```sh
 ./news.py check   # 네트워크 없이 필터 검증 — 시세봇/나열기사/외부도메인 제거, 최신순, 지수 제외
@@ -190,7 +222,8 @@ for f in stocks.jsx stocks.py news.jsx news.py; do ln -s "$R/$f" "$W/$f"; done
 | 환율 종류 | `stocks.py` 의 `FX`. 네이버 reutersCode를 넣는다 (`FX_EURKRW` 등) |
 | 기본 종목 목록 | `stocks.py` 의 `DEFAULT` |
 | 뉴스 갱신 주기 | `news.jsx` 의 `refreshFrequency` (기본 10분) |
-| 뉴스 건수 | `news.py` 의 `LIMIT`(전체) / `PER_STOCK`(종목당) |
+| 뉴스 수집량 | `news.py` 의 `PER_STOCK`(종목당) / `LIMIT`(페이로드 상한) |
+| 뉴스 목록 높이 | `news.jsx` 의 `.list` `max-height` (기본 300px) |
 | 뉴스 검색 기간 | `news.py` 의 `fetch()` 안 `when:2d` |
 | 뉴스 노이즈 필터 | `news.py` 의 `NOISE` 튜플 (제목 부분일치) |
 
@@ -307,7 +340,8 @@ rm "$W/stocks.jsx" "$W/stocks.py" "$W/news.jsx" "$W/news.py"
 | 특정 종목만 안 뜸 | productCode 오타. 토스가 없는 코드를 에러 없이 빼고 준다 |
 | 환율만 안 뜸 | 네이버 응답 변경. `stocks.py` 의 `fx()` 확인 |
 | 코드를 고쳤는데 그대로 | Refresh All Widgets |
-| 뉴스 카드가 비어 있음 | `stocks.json` 에 지수만 있다. 뉴스는 종목만 대상이다 |
+| 뉴스 카드가 비어 있음 | `stocks.json` 에 지수·ETF만 있다. 뉴스는 종목만 대상이다 |
+| 특정 종목이 뉴스에 안 나옴 | ETF로 판별됐을 수 있다. `news-kinds.json` 에서 `EF` 접두 확인 |
 | 뉴스가 안 바뀜 | 주기가 10분이다. 급하면 Refresh All Widgets |
 | 엉뚱한 뉴스가 섞임 | 티커명 오매칭. `news.py` 의 `NOISE` 에 패턴을 추가한다 |
 | 뉴스 클릭해도 안 열림 | `link` 가 구글 도메인이 아니면 걸러진다. `./news.py` 로 URL 확인 |
