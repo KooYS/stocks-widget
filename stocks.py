@@ -2,11 +2,14 @@
 # Übersicht stocks.jsx 데이터 공급 + 종목 추가/삭제
 # 인자 없으면 위젯용 JSON 출력, `add`는 검색 다이얼로그, `del <코드>`는 삭제
 # ponytail: 시스템 python3 고정 — python.org 빌드는 인증서 미설치라 SSL 실패
-import json, os, subprocess, urllib.parse, urllib.request
+import json, os, subprocess, time, urllib.parse, urllib.request
 from sys import argv
 
 # 종목 목록은 스크립트 옆에 둔다 (심링크로 불려도 실제 저장소 위치로 풀린다). 없으면 아래 기본값
-STORE = os.path.join(os.path.dirname(os.path.realpath(__file__)), "stocks.json")
+HERE = os.path.dirname(os.path.realpath(__file__))
+STORE = os.path.join(HERE, "stocks.json")
+NEWS = os.path.join(HERE, "news.json")  # news.py 가 채우는 캐시
+NEWS_TTL = 600  # 10분
 
 # 토스 productCode. 국내주식 A+종목코드, 지수/해외주식은 페이지 URL에서 복사:
 # https://www.tossinvest.com/stocks/<코드>/order , /indices/<코드>
@@ -51,6 +54,26 @@ def osa(*script):
                        capture_output=True, text=True)
     out = r.stdout.strip()
     return "" if out == "false" else out  # 취소하면 false
+
+
+def news():
+    """뉴스는 캐시에서 읽는다. 오래됐으면 백그라운드로만 갱신한다.
+    ponytail: 이 명령은 10초마다 돈다. news.py 는 종목당 1요청이라 10초쯤 걸리므로
+    절대 여기서 기다리면 안 된다. 띄워만 놓고 결과는 다음 틱에 받는다"""
+    try:
+        age = time.time() - os.path.getmtime(NEWS)
+    except OSError:
+        age = NEWS_TTL + 1
+    if age > NEWS_TTL:
+        open(NEWS, "a").close()
+        os.utime(NEWS, None)  # mtime 을 지금으로 → 다음 틱이 중복 실행하지 않는다
+        subprocess.Popen([os.path.join(HERE, "news.py")],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        with open(NEWS) as f:
+            return json.load(f)["items"]
+    except (OSError, ValueError, KeyError):
+        return []  # 아직 안 채워졌다. 다음 틱에 들어온다
 
 
 def prices(codes):
@@ -110,5 +133,5 @@ if len(argv) > 1:
     raise SystemExit
 
 tickers = load()
-print(json.dumps({"tickers": list(tickers.items()), "prices": prices(tickers), "fx": fx()},
-                 ensure_ascii=False))
+print(json.dumps({"tickers": list(tickers.items()), "prices": prices(tickers),
+                  "fx": fx(), "news": news()}, ensure_ascii=False))

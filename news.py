@@ -10,9 +10,11 @@ from sys import argv
 HERE = os.path.dirname(os.path.realpath(__file__))
 STORE = os.path.join(HERE, "stocks.json")
 KINDS = os.path.join(HERE, "news-kinds.json")  # code -> 토스 companyCode 캐시
+OUT = os.path.join(HERE, "news.json")          # 시세 위젯이 읽어가는 캐시
 INDEX = {"KGG01P", "QGG01P"}  # stocks.jsx 의 INDEX 와 같은 규칙 (.NAI 는 접미사로 판별)
-PER_STOCK = 6                 # 종목당 수집량. 위젯이 화면에서 걸러 쓴다
-LIMIT = 60                    # 페이로드 상한 (7종목 × 6 = 42)
+PER_STOCK = 25                # 종목당 수집량. 위젯이 화면에서 걸러 쓴다
+LIMIT = 200                   # 페이로드 상한
+WINDOW = "7d"                 # 검색 기간. 요청당 100건이 RSS 상한이라 이 안에서 논다
 
 # ponytail: 제목 부분일치 블록리스트. 시세봇("...주가, 9월 1일 장중 43,500원 5.64% 하락")과
 # 나열기사가 최신순 1등으로 올라온다. 부족하면 source(톱스타뉴스 등) 기준을 얹는다
@@ -71,7 +73,7 @@ def targets():
 
 
 def fetch(name):
-    q = f'"{name}" when:2d'  # 따옴표 정확일치로 오매칭을 줄인다 (docs §5)
+    q = f'"{name}" when:{WINDOW}'  # 따옴표 정확일치로 오매칭을 줄인다 (docs §5)
     url = ("https://news.google.com/rss/search?q=" + urllib.parse.quote(q)
            + "&hl=ko&gl=KR&ceid=KR:ko")
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -138,4 +140,7 @@ def check():
 if len(argv) > 1 and argv[1] == "check":
     check()
 else:
-    print(json.dumps({"items": collect()}, ensure_ascii=False))
+    payload = json.dumps({"items": collect()}, ensure_ascii=False)
+    with open(OUT, "w") as f:  # stocks.py 가 이걸 읽는다. 직접 실행 시 stdout 으로도 본다
+        f.write(payload)
+    print(payload)

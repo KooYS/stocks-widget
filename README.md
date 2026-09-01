@@ -6,7 +6,7 @@ macOS 데스크탑에 띄우는 주식 시세 위젯. 토스증권 시세 + 네�
 - `＋ 종목` 으로 검색해서 추가, 줄에 마우스 올려 `×` 로 삭제
 - 카드를 드래그해 원하는 위치에 배치 (좌표 기억)
 - 10초마다 갱신, 프리마켓·데이마켓 반영
-- 보유 종목 뉴스를 **별도 카드**로 — 종목을 눌러 그 종목만 보거나 전체 보기, 스크롤
+- **좌측 시세 / 우측 뉴스** 2열. 좌측 종목을 누르면 우측이 그 종목 뉴스로 바뀐다
 
 ![10초마다 시세가 갱신되고 카드를 드래그해 옮기는 모습](demo/live.gif)
 
@@ -31,24 +31,36 @@ macOS 데스크탑에 띄우는 주식 시세 위젯. 토스증권 시세 + 네�
 │        Übersicht/widgets/   ← 이 폴더가 cwd     │
 │           ├ stocks.jsx ─┐                      │
 │           ├ stocks.py  ─┤                      │
-│           ├ news.jsx   ─┼── 심링크 ────────────┼──▶ 이 저장소
-│           └ news.py    ─┘                      │
-└──────┬──────────────────────────┬──────────────┘
-       │ 10초마다 `./stocks.py`   │ 10분마다 `./news.py`
-       ▼                          ▼
-   ├─ 토스증권 API (시세·검색)   └─ Google News RSS (키 불필요)
-   └─ 네이버 API (환율)
-       │                          │
-       └──────────┬───────────────┘
-                  └─ 이 저장소/stocks.json (종목 목록. 둘이 공유, gitignore)
+└──────┬─────────────────────────────────────────┘
+       │ 10초마다 `./stocks.py`
+       ▼
+   ├─ 토스증권 API (시세·검색)
+   ├─ 네이버 API (환율)
+   ├─ 이 저장소/stocks.json (내 종목 목록, gitignore)
+   └─ 이 저장소/news.json  (뉴스 캐시, gitignore)
+                 ▲
+                 │ 10분 지났으면 백그라운드로 띄운다
+            이 저장소/news.py ──▶ Google News RSS (키 불필요)
 ```
 
-**위젯이 둘인 이유는 갱신 주기다.** 시세는 10초, 뉴스는 10분이어야 하는데
-Übersicht는 위젯당 `refreshFrequency` 를 하나만 준다. 위젯을 나누면 그게 곧 캐시라
-TTL 코드를 짤 필요가 없다. 뉴스 카드는 따로 드래그해 원하는 자리에 둔다.
+**뉴스는 왜 캐시를 거치나.** 시세는 10초마다 받아야 하고 뉴스는 10분이면 되는데
+Übersicht는 위젯당 `refreshFrequency` 를 하나만 준다. 게다가 `news.py` 는 종목당
+1요청이라 10초쯤 걸려서, 10초 명령 안에서 기다리면 시세가 멈춘다.
+
+그래서 `stocks.py` 는 **기다리지 않는다.** `news.json` 이 10분보다 오래됐으면
+`news.py` 를 백그라운드로 띄워만 놓고, 출력은 지금 있는 캐시로 즉시 내보낸다.
+새 뉴스는 다음 틱(최대 10초 뒤)에 들어온다.
+
+```python
+if age > NEWS_TTL:
+    os.utime(NEWS, None)        # mtime 을 지금으로 → 다음 틱이 중복 실행하지 않는다
+    subprocess.Popen([HERE + "/news.py"], stdout=DEVNULL, stderr=DEVNULL)
+return json.load(open(NEWS))["items"]   # 항상 캐시에서 즉시
+```
 
 경로는 전부 상대경로다. Übersicht는 widgets 폴더를 cwd로 셸을 띄우므로(`CommandServer(widgetPath)`)
-위젯은 `./stocks.py` 만 부르면 되고, 헬퍼는 `realpath(__file__)` 옆의 `stocks.json` 을 읽는다.
+위젯은 `./stocks.py` 만 부르면 되고, `stocks.py` 는 `realpath(__file__)` 옆의 파일들을 읽는다.
+`news.py` 도 그 경로로 부르므로 **심링크는 두 개면 된다.**
 심링크를 타고 결국 **저장소 안에서** 코드도 데이터도 해결된다. clone 위치를 어디로 잡든 상관없는 이유다.
 
 ### 요구사항
@@ -74,14 +86,15 @@ open -a Übersicht
 # 2. 저장소 clone (위치는 자유)
 git clone https://github.com/KooYS/stocks-widget.git ~/Desktop/dev/stocks-widget
 
-# 3. Übersicht 위젯 폴더에 네 파일 다 심링크
+# 3. Übersicht 위젯 폴더에 두 파일 심링크
 W="$HOME/Library/Application Support/Übersicht/widgets"
 R="$HOME/Desktop/dev/stocks-widget"
-for f in stocks.jsx stocks.py news.jsx news.py; do ln -s "$R/$f" "$W/$f"; done
+ln -s "$R/stocks.jsx" "$W/stocks.jsx"
+ln -s "$R/stocks.py"  "$W/stocks.py"
 ```
 
-`.py` 도 같이 걸어야 한다. 위젯이 `./stocks.py` / `./news.py` 로 부르기 때문이다.
-뉴스가 필요 없으면 `news.*` 두 개는 빼면 된다 — 시세 카드는 그대로 돈다.
+`stocks.py` 도 같이 걸어야 한다. 위젯이 `./stocks.py` 로 부르기 때문이다.
+`news.py` 는 안 걸어도 된다 — `stocks.py` 가 저장소 경로로 직접 부른다.
 
 심링크로 거는 이유: Übersicht는 **정해진 폴더만** 읽고 위젯 경로를 바꿀 수 없다.
 원본을 저장소에 두고 링크만 걸어두면 `git pull` 한 번으로 갱신된다.
@@ -92,9 +105,8 @@ for f in stocks.jsx stocks.py news.jsx news.py; do ln -s "$R/$f" "$W/$f"; done
 동작 확인:
 
 ```sh
-./stocks.py | python3 -m json.tool   # tickers / prices / fx 세 키가 나오면 정상
-./news.py check                      # 네트워크 없이 필터 로직만 검증
-./news.py | python3 -m json.tool     # items 배열 (5초쯤 걸린다)
+./stocks.py | python3 -m json.tool   # tickers / prices / fx / news 네 키가 나오면 정상
+./news.py check                      # 뉴스 필터 로직만 검증 (네트워크 불필요)
 ```
 
 ---
@@ -108,8 +120,8 @@ for f in stocks.jsx stocks.py news.jsx news.py; do ln -s "$R/$f" "$W/$f"; done
 | 종목 삭제 | 해당 줄에 마우스를 올리면 이름 옆에 `×` |
 | 위치 이동 | 카드를 드래그. 버튼 위에서 끌면 드래그 안 걸린다 |
 | 기사 읽기 | 뉴스 카드에서 헤드라인 클릭 → 기본 브라우저로 열린다 |
-| 특정 종목 뉴스만 | 헤드라인 위 종목명 클릭. `‹` 로 복귀 |
-| 뉴스 전체 보기 | 뉴스 카드 헤더의 `전체 N건` 클릭 |
+| 특정 종목 뉴스만 | **좌측에서 그 종목 줄을 클릭.** 다시 누르면 해제, `‹` 로도 복귀 |
+| 뉴스 전체 보기 | 우측 헤더의 `전체 N건` 클릭 |
 | 위치 초기화 | Übersicht 개발자도구 콘솔에서 `localStorage.removeItem("stocks-widget-pos")` |
 | 뉴스 위치 초기화 | 같은 콘솔에서 `localStorage.removeItem("news-widget-pos")` |
 
@@ -185,18 +197,26 @@ NAS116LTR-E0  샌디스크           ← 주식
 
 ### 보기 방식
 
-수집은 종목당 6건(`PER_STOCK`), 화면에서 걸러 보여준다.
+카드는 2열이다. 좌측이 시세, 우측이 뉴스. 수집은 7일치를 종목당 25건(`PER_STOCK`),
+화면에서 걸러 보여준다. 종목당 요청은 1회뿐이고 RSS가 한 번에 100건씩 주므로,
+수집량을 올려도 **요청 수는 안 늘어난다** — 받아놓고 버리던 걸 쓰는 것뿐이다.
 
-| 상태 | 내용 | 가는 법 |
+| 상태 | 우측에 뜨는 것 | 가는 법 |
 |---|---|---|
 | 기본 | 종목당 최신 1건씩 | — |
-| 종목 | 그 종목 뉴스 전부 | 헤드라인 위 **종목명** 클릭 |
-| 전체 | 모든 종목 전부, 최신순 | 헤더의 **전체 N건** 클릭 |
+| 종목 | 그 종목 뉴스 전부 | **좌측 종목 줄 클릭** |
+| 전체 | 모든 종목 전부, 최신순 | 우측 헤더 **전체 N건** 클릭 |
 
-`‹` 를 누르면 기본으로 돌아온다. 목록은 넘치면 스크롤된다(최대 높이 300px).
-목록 안에서는 드래그가 안 걸리니 카드를 옮길 땐 헤더나 여백을 잡는다.
+선택된 줄은 밝게 표시된다. 같은 줄을 다시 누르거나 `‹` 를 누르면 기본으로 돌아온다.
+뉴스가 없는 항목(지수·ETF)은 클릭이 안 걸린다.
 
-> 상태는 Übersicht의 `updateState`/`dispatch` 로 들고 있다. 위젯 `render` 는
+**우측 높이는 좌측 시세 높이를 따라간다.** 뉴스 목록에 고정 높이를 주면 두 열이
+따로 놀아서, `.list` 를 `flex: 1` 로 두고 넘치면 스크롤시킨다. 종목이 적을 때
+찌부러지지 않게 `min-height` 만 바닥값으로 둔다.
+
+목록 안에서는 드래그가 안 걸리니 카드를 옮길 땐 헤더나 좌측을 잡는다.
+
+> 선택 상태는 Übersicht의 `updateState`/`dispatch` 로 들고 있다. 위젯 `render` 는
 > 컴포넌트가 아니라서 React 훅을 못 쓴다.
 
 ```sh
@@ -221,10 +241,11 @@ NAS116LTR-E0  샌디스크           ← 주식
 | 통화기호 없이 표시할 KRW 지수 | `stocks.jsx` 의 `INDEX` (`.NAI` 로 끝나면 자동 처리) |
 | 환율 종류 | `stocks.py` 의 `FX`. 네이버 reutersCode를 넣는다 (`FX_EURKRW` 등) |
 | 기본 종목 목록 | `stocks.py` 의 `DEFAULT` |
-| 뉴스 갱신 주기 | `news.jsx` 의 `refreshFrequency` (기본 10분) |
+| 뉴스 갱신 주기 | `stocks.py` 의 `NEWS_TTL` (기본 600초) |
 | 뉴스 수집량 | `news.py` 의 `PER_STOCK`(종목당) / `LIMIT`(페이로드 상한) |
-| 뉴스 목록 높이 | `news.jsx` 의 `.list` `max-height` (기본 300px) |
-| 뉴스 검색 기간 | `news.py` 의 `fetch()` 안 `when:2d` |
+| 두 열 폭 | `stocks.jsx` 의 `.left` / `.right` `width` |
+| 뉴스칸 최소 높이 | `stocks.jsx` 의 `.list` `min-height` |
+| 뉴스 검색 기간 | `news.py` 의 `WINDOW` (기본 `7d`) |
 | 뉴스 노이즈 필터 | `news.py` 의 `NOISE` 튜플 (제목 부분일치) |
 
 수정 후 저장하면 Übersicht가 알아서 다시 읽는다. 심링크 탓에 감지가 안 되면 Refresh All Widgets.
@@ -249,7 +270,8 @@ W="$HOME/Library/Application Support/Übersicht/widgets"
 R="$HOME/Desktop/dev/stocks-widget"
 mv "$W/stocks.jsx" "$W/stocks.jsx.bak" 2>/dev/null
 mv ~/.config/stocks.json "$R/stocks.json" 2>/dev/null   # 예전 위치에서 종목 목록 옮기기
-for f in stocks.jsx stocks.py news.jsx news.py; do ln -s "$R/$f" "$W/$f"; done
+ln -s "$R/stocks.jsx" "$W/stocks.jsx"
+ln -s "$R/stocks.py"  "$W/stocks.py"
 ```
 
 `stocks.json` 은 `.gitignore` 에 들어 있다. 종목을 추가/삭제할 때마다 바뀌는 개인 데이터라
@@ -264,8 +286,8 @@ for f in stocks.jsx stocks.py news.jsx news.py; do ln -s "$R/$f" "$W/$f"; done
 | 고친 파일 | 반영 방식 |
 |---|---|
 | `stocks.py` | 다음 갱신(최대 10초)에 자동 반영. 셸에서 먼저 돌려보는 게 빠르다 |
-| `news.py` | 다음 갱신까지 **최대 10분**. 기다리지 말고 Refresh All Widgets |
-| `*.jsx` | 저장하면 Übersicht가 다시 읽는다. 심링크라 감지가 안 되면 메뉴바 → **Refresh All Widgets** |
+| `news.py` | `news.json` 이 10분 지나야 다시 돈다. 급하면 `rm news.json` 후 `./stocks.py` |
+| `stocks.jsx` | 저장하면 Übersicht가 다시 읽는다. 심링크라 감지가 안 되면 메뉴바 → **Refresh All Widgets** |
 | 심링크 자체 | 앱 재시작. Refresh로는 다시 안 잡힌다 |
 
 ```sh
@@ -273,7 +295,8 @@ for f in stocks.jsx stocks.py news.jsx news.py; do ln -s "$R/$f" "$W/$f"; done
 ./stocks.py del A005930              # 삭제
 ./stocks.py add                      # 검색 다이얼로그 (GUI 필요)
 ./news.py check                      # 뉴스 필터 검증 (네트워크 불필요, 즉시)
-./news.py | python3 -m json.tool     # 뉴스 위젯이 받는 JSON (5초쯤)
+./news.py | python3 -m json.tool     # 뉴스만 직접 수집 (10초쯤). news.json 도 갱신된다
+rm news.json && ./stocks.py >/dev/null  # 캐시 버리고 백그라운드 재수집 트리거
 ```
 
 위젯이 `시세 없음` 만 띄우면 십중팔구 `stocks.py` 출력이 JSON이 아닌 경우다. 위 명령으로 바로 보인다.
@@ -285,14 +308,15 @@ for f in stocks.jsx stocks.py news.jsx news.py; do ln -s "$R/$f" "$W/$f"; done
 ### 위젯(.jsx) 구조
 
 Übersicht가 JSX를 자체 트랜스파일한다. 특별한 건 `import { run } from "uebersicht"` (셸 명령 실행) 하나뿐이고 나머지는 평범한 React다.
-`stocks.jsx` 와 `news.jsx` 둘 다 같은 규약을 따른다. 내보내야 하는 것:
+내보내야 하는 것:
 
 | export | 역할 |
 |---|---|
-| `command` | 주기마다 실행할 셸 명령. `./stocks.py` / `./news.py` — cwd는 widgets 폴더다 |
+| `command` | 10초마다 실행할 셸 명령. `./stocks.py` — cwd는 widgets 폴더다 |
 | `refreshFrequency` | 실행 주기(ms) |
 | `parse` | `command` 의 stdout(문자열)을 그리기 좋은 형태로 변환 |
-| `render` | `{ output, error }` 를 받아 JSX 반환 |
+| `render` | 상태를 받아 JSX 반환. 2번째 인자로 `dispatch` 가 온다 |
+| `initialState` / `updateState` | 선택된 종목 같은 위젯 상태 보관. 훅 대용이다 |
 | `className` | 위젯 CSS. 최상위 선택자 없이 바로 속성을 쓴다 |
 
 > **`backdrop-filter` 는 쓰지 말 것.** 간유리 효과를 주면 갱신될 때마다 backdrop이
@@ -300,13 +324,11 @@ for f in stocks.jsx stocks.py news.jsx news.py; do ln -s "$R/$f" "$W/$f"; done
 > 레이어를 붙잡아도, 블러를 `::before` 로 분리해도 안 잡혔다. 투명 창이라 배경 알파만
 > 줘도 벽지가 비친다 — 두 카드 모두 `rgba(40,44,52,0.6)` 하나로 끝냈다.
 
-> 위젯끼리 `import` 는 안 된다. `news.jsx` 의 드래그 코드가 `stocks.jsx` 와 겹치는 건 그 때문이다.
-
 ### 제거
 
 ```sh
 W="$HOME/Library/Application Support/Übersicht/widgets"
-rm "$W/stocks.jsx" "$W/stocks.py" "$W/news.jsx" "$W/news.py"
+rm "$W/stocks.jsx" "$W/stocks.py"
 ```
 
 저장소를 통째로 지우면 `stocks.json`(종목 목록)도 같이 사라진다.
@@ -342,6 +364,8 @@ rm "$W/stocks.jsx" "$W/stocks.py" "$W/news.jsx" "$W/news.py"
 | 코드를 고쳤는데 그대로 | Refresh All Widgets |
 | 뉴스 카드가 비어 있음 | `stocks.json` 에 지수·ETF만 있다. 뉴스는 종목만 대상이다 |
 | 특정 종목이 뉴스에 안 나옴 | ETF로 판별됐을 수 있다. `news-kinds.json` 에서 `EF` 접두 확인 |
-| 뉴스가 안 바뀜 | 주기가 10분이다. 급하면 Refresh All Widgets |
+| 뉴스가 안 바뀜 | `news.json` 이 10분 지나야 갱신된다. `rm news.json` 후 잠시 기다린다 |
+| 뉴스칸이 계속 "받는 중" | 첫 실행은 백그라운드 수집이 끝날 때까지 10초쯤 걸린다 |
 | 엉뚱한 뉴스가 섞임 | 티커명 오매칭. `news.py` 의 `NOISE` 에 패턴을 추가한다 |
 | 뉴스 클릭해도 안 열림 | `link` 가 구글 도메인이 아니면 걸러진다. `./news.py` 로 URL 확인 |
+| 종목 줄이 클릭이 안 됨 | 그 종목 뉴스가 없다. 지수·ETF는 원래 대상이 아니다 |
