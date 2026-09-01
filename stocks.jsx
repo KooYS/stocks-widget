@@ -157,9 +157,13 @@ export const parse = (output) => {
 const fmt = (n, digits) =>
   n.toLocaleString("ko-KR", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 
+// 7일치까지 들어오므로 "162h" 로는 언제 글인지 안 읽힌다. 하루 넘으면 날짜를 같이 준다
 const ago = (ts) => {
-  const m = (Date.now() / 1000 - ts) / 60;
-  return m < 60 ? `${Math.max(1, Math.round(m))}m` : `${Math.round(m / 60)}h`;
+  const d = new Date(ts * 1000);
+  const min = (Date.now() - d) / 60000;
+  if (min < 60) return `${Math.max(1, Math.round(min))}분 전`;
+  if (min < 1440) return `${Math.round(min / 60)}시간 전`;
+  return `${d.getMonth() + 1}/${d.getDate()} · ${Math.round(min / 1440)}일 전`;
 };
 
 // 기본은 종목당 최신 1건, 종목을 고르면 그 종목만, 전체보기면 다.
