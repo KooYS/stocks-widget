@@ -12,8 +12,8 @@ STORE = os.path.join(HERE, "stocks.json")
 KINDS = os.path.join(HERE, "news-kinds.json")  # code -> 토스 companyCode 캐시
 OUT = os.path.join(HERE, "news.json")          # 시세 위젯이 읽어가는 캐시
 INDEX = {"KGG01P", "QGG01P"}  # stocks.jsx 의 INDEX 와 같은 규칙 (.NAI 는 접미사로 판별)
-PER_STOCK = 25                # 종목당 수집량. 위젯이 화면에서 걸러 쓴다
-LIMIT = 200                   # 페이로드 상한
+PER_STOCK = 100               # RSS 한 요청 상한이 100건이라 사실상 '받은 전부'
+LIMIT = 500                   # 페이로드 상한. 종목이 늘면 여기서 걸린다
 WINDOW = "7d"                 # 검색 기간. 요청당 100건이 RSS 상한이라 이 안에서 논다
 
 # ponytail: 제목 부분일치 블록리스트. 시세봇("...주가, 9월 1일 장중 43,500원 5.64% 하락")과
