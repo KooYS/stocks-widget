@@ -2,7 +2,7 @@
 # Übersicht news.jsx 데이터 공급 — 종목별 구글뉴스 헤드라인
 # 종목 목록은 stocks.json 을 그대로 공유한다. 지수는 대상이 아니다
 # ponytail: 시스템 python3 고정 — python.org 빌드는 인증서 미설치라 SSL 실패
-import json, os, time, urllib.parse, urllib.request
+import json, os, re, time, urllib.parse, urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from sys import argv
@@ -15,6 +15,14 @@ INDEX = {"KGG01P", "QGG01P"}  # stocks.jsx 의 INDEX 와 같은 규칙 (.NAI 는
 PER_STOCK = 100               # RSS 한 요청 상한이 100건이라 사실상 '받은 전부'
 LIMIT = 500                   # 페이로드 상한. 종목이 늘면 여기서 걸린다
 WINDOW = "7d"                 # 검색 기간. 요청당 100건이 RSS 상한이라 이 안에서 논다
+
+# 이름이 애매한 종목만 증시 맥락으로 좁힌다. 코드는 AND 가 아니라 이 OR 그룹에 넣는다 —
+# 코드를 단독으로 AND 하면 기사 대부분이 코드를 안 적어서 다 날아간다
+# (실측 when:30d: "서연" 100건 -> 1건, "지엔씨에너지" 51건 -> 10건).
+# ponytail: 전 종목에 걸면 안 된다. SK텔레콤이 100 -> 52 로 줄었는데 빠지는 게 잡소식이
+# 아니라 'SKT 3조 데이터센터 투자', '아마존 제휴' 같은 진짜 회사 뉴스였다.
+NARROW = set()  # 예: {"A007860"} 서연 — 이름만 쓰면 연예인·배구선수가 100건 중 대부분이다
+CONTEXT = ("주가", "증권", "코스피", "코스닥", "실적", "공시")
 
 # ponytail: 제목 부분일치 블록리스트. 시세봇("...주가, 9월 1일 장중 43,500원 5.64% 하락")과
 # 나열기사가 최신순 1등으로 올라온다. 부족하면 source(톱스타뉴스 등) 기준을 얹는다
@@ -72,8 +80,19 @@ def targets():
     return [(c, tickers[c]) for c in codes if not cache.get(c, "").startswith("EF")]
 
 
-def fetch(name):
-    q = f'"{name}" when:{WINDOW}'  # 따옴표 정확일치로 오매칭을 줄인다 (docs §5)
+def query(code, name, narrow=NARROW):
+    q = f'"{name}"'  # 따옴표 정확일치로 오매칭을 줄인다 (docs §5)
+    if code in narrow:
+        ctx = list(CONTEXT)
+        m = re.fullmatch(r"A(\d{6})", code)  # 국내주식만 6자리 코드가 있다
+        if m:
+            ctx.insert(0, m.group(1))
+        q += " (" + " OR ".join(ctx) + ")"
+    return f"{q} when:{WINDOW}"
+
+
+def fetch(code, name):
+    q = query(code, name)
     url = ("https://news.google.com/rss/search?q=" + urllib.parse.quote(q)
            + "&hl=ko&gl=KR&ceid=KR:ko")
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -99,7 +118,7 @@ def collect():
     news = []
     for code, name in targets():
         try:
-            news += rows(name, fetch(name))
+            news += rows(name, fetch(code, name))
         except Exception:  # ponytail: 한 종목이 실패해도 나머지는 띄운다
             pass
         time.sleep(0.3)  # docs §4: 3 req/s 이하로 유지
@@ -132,6 +151,11 @@ def check():
     assert [x["title"] for x in r] == ["지엔씨에너지, 신공장 착공",
                                        "지엔씨에너지, 창사 이래 최대 수주계약"], r
     assert all(x["url"].startswith("https://news.google.com/") for x in r), "도메인 가드 실패"
+    assert query("A005930", "삼성전자") == '"삼성전자" when:7d'
+    assert query("US19890516001", "마이크론", {"US19890516001"}) == (
+        '"마이크론" (주가 OR 증권 OR 코스피 OR 코스닥 OR 실적 OR 공시) when:7d')
+    assert query("A007860", "서연", {"A007860"}) == (
+        '"서연" (007860 OR 주가 OR 증권 OR 코스피 OR 코스닥 OR 실적 OR 공시) when:7d')
     assert [c for c in ("SOX.NAI", "COMP.NAI", "KGG01P", "QGG01P", "A005930")
             if not (c.endswith(".NAI") or c in INDEX)] == ["A005930"], "지수 제외 실패"
     print("ok — 시세봇/나열기사/외부도메인 3종 제거, 최신순, 언론사명 제거, 지수 제외")
