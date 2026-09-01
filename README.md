@@ -210,9 +210,23 @@ NAS116LTR-E0  샌디스크           ← 주식
 선택된 줄은 밝게 표시된다. 같은 줄을 다시 누르거나 `‹` 를 누르면 기본으로 돌아온다.
 뉴스가 없는 항목(지수·ETF)은 클릭이 안 걸린다.
 
-**우측 높이는 좌측 시세 높이를 따라간다.** 뉴스 목록에 고정 높이를 주면 두 열이
-따로 놀아서, `.list` 를 `flex: 1` 로 두고 넘치면 스크롤시킨다. 종목이 적을 때
-찌부러지지 않게 `min-height` 만 바닥값으로 둔다.
+**우측 높이는 좌측 시세가 정한다.** 뉴스 목록에 고정 높이를 주면 두 열이 따로 놀고,
+그렇다고 `.list { flex: 1 }` 만 주면 이번엔 뉴스 137건이 카드 높이를 밀어버린다
+(flex는 내용이 크면 같이 커진다).
+
+그래서 우측이 **카드 높이에 관여하지 못하게** 만든다. `.right` 는 in-flow 자식이
+없고(`.pane` 이 `position: absolute`), 높이는 flex `stretch` 로 좌측에서 받아온다.
+`.list` 는 그 안에서 `flex: 1; min-height: 0` 으로 남는 공간을 채우고 넘치면 스크롤한다.
+
+```css
+.left  { width: 300px; min-height: 220px; }        /* 높이의 주인 */
+.right { position: relative; }                      /* 내용이 높이를 못 민다 */
+.pane  { position: absolute; top:0; right:0; bottom:0; left:18px;
+         display: flex; flex-direction: column; }
+.list  { flex: 1; min-height: 0; overflow-y: auto; }
+```
+
+종목이 적을 때 뉴스칸이 찌부러지지 않게 `.left` 에 `min-height` 를 바닥값으로 둔다.
 
 목록 안에서는 드래그가 안 걸리니 카드를 옮길 땐 헤더나 좌측을 잡는다.
 

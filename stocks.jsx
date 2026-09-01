@@ -85,10 +85,14 @@ export const className = `
   .head { display: flex; justify-content: space-between; align-items: baseline;
           font-size: 11px; opacity: 0.6; margin-bottom: 12px; letter-spacing: 0.3px; }
   .cols { display: flex; align-items: stretch; }
-  .left { width: 300px; }
-  .right { width: 320px; margin-left: 18px; padding-left: 18px;
-           border-left: 1px solid rgba(255,255,255,0.12);
-           display: flex; flex-direction: column; }
+  .left { width: 300px; min-height: 220px; }
+  /* ponytail: 카드 높이는 좌측 시세가 정한다. .right 는 in-flow 자식이 없어서(.pane 이
+     absolute) 뉴스가 137건이든 높이를 못 민다. stretch 로 좌측 높이를 그대로 받고
+     .list 가 그 안에서 스크롤한다. flex:1 만으로는 우측 내용이 카드를 늘려버린다 */
+  .right { position: relative; width: 338px; margin-left: 18px;
+           border-left: 1px solid rgba(255,255,255,0.12); }
+  .pane { position: absolute; top: 0; right: 0; bottom: 0; left: 18px;
+          display: flex; flex-direction: column; }
 
   .row  { display: flex; justify-content: space-between; align-items: baseline;
           padding: 5px 0; border-radius: 6px; }
@@ -103,9 +107,7 @@ export const className = `
   .rule { height: 1px; background: rgba(255,255,255,0.12); margin: 8px 0; }
   .grp  { font-size: 10px; opacity: 0.45; letter-spacing: 0.5px; margin: 2px 0 1px; }
 
-  /* ponytail: 높이를 고정하지 않는다. 좌측 시세 높이에 맞춰 늘어나고, 넘치면 스크롤.
-     min-height 는 종목이 적을 때 뉴스칸이 찌부러지지 않게 하는 바닥값 */
-  .list { flex: 1; min-height: 220px; overflow-y: auto;
+  .list { flex: 1; min-height: 0; overflow-y: auto;
           overscroll-behavior: contain; cursor: default; }
   .list::-webkit-scrollbar { width: 5px; }
   .list::-webkit-scrollbar-track { background: transparent; }
@@ -233,33 +235,35 @@ export const render = ({ output, error, pick }, dispatch) => {
           ))}
         </div>
         <div className="right">
-          <div className="head">
-            {pick ? (
-              <button className="link" onClick={go(null)} title="돌아가기">
-                ‹ {pick === "*" ? "전체" : pick}
-              </button>
-            ) : (
-              <span>뉴스</span>
-            )}
-            {!pick && news.length > 0 && (
-              <button className="link" onClick={go("*")} title="전체 보기">
-                전체 {news.length}건
-              </button>
-            )}
-          </div>
-          <div className="list">
-            {rows.length === 0 && <div className="empty">뉴스를 받는 중…</div>}
-            {rows.map((n, i) => (
-              <div key={n.url}>
-                {i > 0 && <div className="thin" />}
-                <div className="item">
-                  <div className="meta">{n.name} · {ago(n.ts)}</div>
-                  <div className="title" onClick={openArticle(n.url)} title="기사 열기">
-                    {n.title}
+          <div className="pane">
+            <div className="head">
+              {pick ? (
+                <button className="link" onClick={go(null)} title="돌아가기">
+                  ‹ {pick === "*" ? "전체" : pick}
+                </button>
+              ) : (
+                <span>뉴스</span>
+              )}
+              {!pick && news.length > 0 && (
+                <button className="link" onClick={go("*")} title="전체 보기">
+                  전체 {news.length}건
+                </button>
+              )}
+            </div>
+            <div className="list">
+              {rows.length === 0 && <div className="empty">뉴스를 받는 중…</div>}
+              {rows.map((n, i) => (
+                <div key={n.url}>
+                  {i > 0 && <div className="thin" />}
+                  <div className="item">
+                    <div className="meta">{n.name} · {ago(n.ts)}</div>
+                    <div className="title" onClick={openArticle(n.url)} title="기사 열기">
+                      {n.title}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
       </div>
